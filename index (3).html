@@ -26,10 +26,10 @@
         .favorite-btn:hover { transform: scale(1.1); }
         .favorite-btn svg { width: 1.5rem; height: 1.5rem; stroke: #4b5563; stroke-width: 1.5; fill: none; }
         .favorite-btn.favorited svg { fill: #ef4444; stroke: #ef4444; }
-        .admin-mode { position: fixed; top: 10px; right: 10px; background: rgba(255, 0, 0, 0.8); color: white; padding: 8px 16px; border-radius: 4px; z-index: 1000; font-size: 14px; }
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #34d399; border-radius: 50%; width: 48px; height: 48px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         #loading-overlay { position: fixed; inset: 0; background-color: rgba(255, 255, 255, 0.7); z-index: 9999; }
+        .error-modal-content { max-height: 70vh; }
     </style>
 </head>
 <body class="text-gray-800">
@@ -37,8 +37,6 @@
     <div id="loading-overlay" class="flex items-center justify-center">
         <div class="loader"></div>
     </div>
-
-    <div id="admin-indicator" class="admin-mode hidden">管理員模式</div>
 
     <nav class="bg-white shadow-md sticky top-0 z-50">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
@@ -158,22 +156,21 @@
                     <h2 class="text-3xl font-bold text-center mb-6" data-i18n="reportIssueTitle">問題回報</h2>
                     <form id="issue-form">
                         <div class="mb-4">
-                            <label for="feedbackType" class="block text-gray-700 text-sm font-bold mb-2" data-i18n="reportIssueTypeLabel">回報類型</label>
-                            <select id="feedbackType" name="feedbackType" required class="shadow border rounded w-full py-2 px-3 text-gray-700">
-                                <option value="info_error" data-i18n="reportTypeInfoError">店家資訊錯誤</option>
-                                <option value="location_error" data-i18n="reportTypeLocationError">地圖位置錯誤</option>
-                                <option value="suggestion" data-i18n="reportTypeSuggestion">新店家建議</option>
-                                <option value="other" data-i18n="reportTypeOther">其他問題</option>
-                            </select>
-                        </div>
-                        <div class="mb-4">
-                            <label for="comment" class="block text-gray-700 text-sm font-bold mb-2" data-i18n="reportIssueLabel">請詳細說明：</label>
-                            <textarea id="comment" name="comment" rows="4" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" data-i18n="reportIssuePlaceholder" placeholder="請盡量詳細描述，例如：店家名稱、錯誤的資訊、正確的資訊..."></textarea>
+                            <label for="issue" class="block text-gray-700 text-sm font-bold mb-2" data-i18n="reportIssueLabel">請描述您遇到的問題：</label>
+                            <textarea id="issue" name="issue" rows="6" required
+                                      class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                                      data-i18n="reportIssuePlaceholder"
+                                      placeholder="例如：某間商店資訊錯誤、地圖位置有誤..."></textarea>
                         </div>
                         <div class="text-center">
-                            <button type="submit" class="btn-primary px-6 py-2 rounded-lg font-medium" data-i18n="reportIssueSubmitBtn">送出回報</button>
+                            <button type="submit"
+                                    class="btn-primary px-6 py-2 rounded-lg font-medium"
+                                    data-i18n="reportIssueSubmitBtn">
+                                送出回報
+                            </button>
                         </div>
                     </form>
+                    <p id="issue-message" class="text-center text-green-600 mt-4 hidden" data-i18n="reportIssueSuccessMsg">感謝您的回報，我們會儘快處理！</p>
                 </div>
             </div>
         </section>
@@ -190,10 +187,22 @@
         </div>
     </div>
 
-    <div id="message-modal" class="fixed inset-0 bg-black bg-opacity-50 z-[2000] hidden flex items-center justify-center">
+    <div id="message-modal" class="fixed inset-0 bg-black bg-opacity-50 z-[2000] hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm mx-auto text-center">
             <p id="message-modal-text" class="text-gray-800 text-lg mb-4"></p>
             <button id="close-message-modal" class="btn-primary px-6 py-2 rounded-lg font-medium" data-i18n="okButton">確定</button>
+        </div>
+    </div>
+    
+    <div id="error-modal" class="fixed inset-0 bg-black bg-opacity-75 z-[3000] hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg p-6 shadow-xl max-w-2xl w-full mx-auto">
+            <h3 class="text-xl font-bold text-red-600 mb-4" data-i18n="errorModalTitle">發生錯誤</h3>
+            <div class="bg-red-50 p-4 rounded-md error-modal-content overflow-y-auto">
+                <pre id="error-details" class="text-sm text-gray-800 whitespace-pre-wrap break-all"></pre>
+            </div>
+            <div class="mt-6 text-right">
+                <button id="close-error-modal" class="bg-red-600 text-white px-6 py-2 rounded-lg font-medium">關閉</button>
+            </div>
         </div>
     </div>
 
@@ -222,15 +231,12 @@ document.addEventListener('DOMContentLoaded', () => {
             filterCategoryTitle: '依類別篩選', filterAll: '全部', filterFavorites: '我的收藏',
             mapSectionTitle: '永續商店地圖', shopListSectionTitle: '永續商店列表', viewDetailsBtn: '查看詳情', loadMoreBtn: '載入更多',
             newsletterTitle: '訂閱永續生活電子報', newsletterSubtitle: '獲取最新的永續商店資訊、環保生活技巧和特別優惠', newsletterPlaceholder: '您的電子郵件', subscribeBtn: '訂閱',
-            reportIssueTitle: '問題回報', reportIssueLabel: '請詳細說明：', reportIssuePlaceholder: '請盡量詳細描述，例如：店家名稱、錯誤的資訊、正確的資訊...',
-            reportIssueTypeLabel: '回報類型', reportTypeInfoError: '店家資訊錯誤', reportTypeLocationError: '地圖位置錯誤', reportTypeSuggestion: '新店家建議', reportTypeOther: '其他問題',
-            reportIssueSubmitBtn: '送出回報', okButton: '確定', notProvided: '未提供',
-            copyright: '© 2025 永續商店地圖 - 版權所有',
+            reportIssueTitle: '問題回報', reportIssueLabel: '請描述您遇到的問題：', reportIssuePlaceholder: '例如：某間商店資訊錯誤、地圖位置有誤...', reportIssueSubmitBtn: '送出回報',
+            reportIssueSuccessMsg: '感謝您的回報，我們會儘快處理！', reportIssueErrorMsg: '回報失敗，請稍後再試。',
+            okButton: '確定', notProvided: '未提供', copyright: '© 2025 永續商店地圖 - 版權所有',
             modalAddress: '地址', modalOpeningHours: '營業時間', modalContactInfo: '聯絡方式', modalPhone: '電話', modalWebsite: '網站',
-            adminLoginPrompt: '請輸入管理員密碼：', adminLoginSuccess: '已進入管理員模式',
-            recommendationSending: '正在發送推薦信...', recommendationSuccess: '推薦信已成功寄出！',
-            apiError: '發生錯誤，請稍後再試。', newsletterSuccess: '感謝您的訂閱！', reportSuccess: '感謝您的回報！',
-            adminRecommendBtn: '推薦此店家給所有訂閱者'
+            apiError: '發生錯誤，請稍後再試。', newsletterSuccess: '感謝您的訂閱！',
+            errorModalTitle: '發生錯誤'
         },
         'en': {
             pageTitle: 'Sustainable Store Map - Home', appName: 'Sustainable Store Map', home: 'Home', map: 'Map', shopList: 'Shop List', newsletter: 'Newsletter', reportIssueNavLink: 'Report Issue',
@@ -240,22 +246,18 @@ document.addEventListener('DOMContentLoaded', () => {
             filterCategoryTitle: 'Filter by Category', filterAll: 'All', filterFavorites: 'My Favorites',
             mapSectionTitle: 'Sustainable Store Map', shopListSectionTitle: 'Sustainable Shop List', viewDetailsBtn: 'View Details', loadMoreBtn: 'Load More',
             newsletterTitle: 'Subscribe to our Newsletter', newsletterSubtitle: 'Get the latest sustainable store info, eco-friendly tips, and special offers.', newsletterPlaceholder: 'Your email', subscribeBtn: 'Subscribe',
-            reportIssueTitle: 'Report an Issue', reportIssueLabel: 'Please describe the issue:', reportIssuePlaceholder: 'Please be as detailed as possible, e.g., store name, incorrect info, correct info...',
-            reportIssueTypeLabel: 'Feedback Type', reportTypeInfoError: 'Incorrect Store Info', reportTypeLocationError: 'Wrong Map Location', reportTypeSuggestion: 'New Store Suggestion', reportTypeOther: 'Other Issues',
-            reportIssueSubmitBtn: 'Submit Report', okButton: 'OK', notProvided: 'Not provided',
-            copyright: '© 2025 Sustainable Store Map - All Rights Reserved',
+            reportIssueTitle: 'Report an Issue', reportIssueLabel: 'Please describe the issue you encountered:', reportIssuePlaceholder: 'e.g., Incorrect store information, wrong map location...', reportIssueSubmitBtn: 'Submit Report',
+            reportIssueSuccessMsg: 'Thank you for your report, we will process it soon!', reportIssueErrorMsg: 'Failed to submit report. Please try again later.',
+            okButton: 'OK', notProvided: 'Not provided', copyright: '© 2025 Sustainable Store Map - All Rights Reserved',
             modalAddress: 'Address', modalOpeningHours: 'Opening Hours', modalContactInfo: 'Contact Info', modalPhone: 'Phone', modalWebsite: 'Website',
-            adminLoginPrompt: 'Please enter admin password:', adminLoginSuccess: 'Admin mode activated',
-            recommendationSending: 'Sending recommendation...', recommendationSuccess: 'Recommendation sent successfully!',
-            apiError: 'An error occurred. Please try again later.', newsletterSuccess: 'Thank you for subscribing!', reportSuccess: 'Thank you for your feedback!',
-            adminRecommendBtn: 'Recommend this store to all subscribers'
+            apiError: 'An error occurred. Please try again later.', newsletterSuccess: 'Thank you for subscribing!',
+            errorModalTitle: 'An Error Occurred'
         }
     };
 
     // ===== UI ELEMENTS =====
     const ui = {
         loadingOverlay: document.getElementById('loading-overlay'),
-        adminIndicator: document.getElementById('admin-indicator'),
         shopCardsContainer: document.getElementById('shop-cards-container'),
         loadMoreButton: document.getElementById('load-more-button'),
         announcementBar: document.getElementById('announcement-bar'),
@@ -263,21 +265,29 @@ document.addEventListener('DOMContentLoaded', () => {
         messageModal: document.getElementById('message-modal'),
         messageModalText: document.getElementById('message-modal-text'),
         shopDetailModal: document.getElementById('shop-detail-modal'),
-        shopDetailContainer: document.getElementById('shop-detail-container')
+        shopDetailContainer: document.getElementById('shop-detail-container'),
+        errorModal: document.getElementById('error-modal'),
+        errorDetails: document.getElementById('error-details')
     };
 
-    // ===== API HELPER =====
-    async function apiFetch(action, payload = {}, requiresAuth = false) {
+    // ===== API & ERROR HANDLING =====
+    function showErrorModal(error, action) {
+        let details = `Action: ${action}\n`;
+        details += `Error: ${error.name || 'Unknown Error'}: ${error.message}\n\n`;
+        if(error.responseText) {
+            details += `Backend Response:\n------------------\n${error.responseText}\n------------------\n\n`;
+        }
+        if(error.stack) {
+            details += `Stack Trace:\n${error.stack}`;
+        }
+        ui.errorDetails.textContent = details;
+        ui.errorModal.classList.remove('hidden');
+    }
+    
+    async function apiFetch(action, payload = {}) {
         ui.loadingOverlay.classList.remove('hidden');
         try {
-            const token = localStorage.getItem('authToken');
-            if (requiresAuth && !token) {
-                showMessage(translations[currentLang].apiError);
-                return null;
-            }
-            
             const body = { action, ...payload };
-            if (requiresAuth) body.token = token;
 
             const response = await fetch(API_URL, {
                 method: 'POST',
@@ -285,16 +295,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(body),
                 mode: 'cors'
             });
-
+            
             const text = await response.text();
-            const result = JSON.parse(text);
+            let result;
+            try {
+                result = JSON.parse(text);
+            } catch (e) {
+                const parseError = new Error("Failed to parse JSON response from backend.");
+                parseError.responseText = text;
+                throw parseError;
+            }
 
             if (result.status === 'error') throw new Error(result.message);
             return result.data;
 
         } catch (error) {
             console.error(`API Fetch Error (${action}):`, error);
-            showMessage(error.message || translations[currentLang].apiError);
+            showErrorModal(error, action);
             return null;
         } finally {
             ui.loadingOverlay.classList.add('hidden');
@@ -337,7 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return favoriteShops.includes(shop.id);
             }
 
-            const matchesCategory = currentFilterCategory === 'all' || (shop[`type_${currentLang}`] || shop['type_zh-TW']) === currentFilterCategory;
+            const matchesCategory = currentFilterCategory === 'all' || (shop['type_zh-TW']) === currentFilterCategory;
 
             const name = shop[`name_${currentLang}`] || shop['name_zh-TW'] || '';
             const address = shop[`address_${currentLang}`] || shop['address_zh-TW'] || '';
@@ -402,7 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 markersGroup.addLayer(marker);
             }
         });
-        if (filteredShops.length > 0) {
+        if (filteredShops.length > 0 && markersGroup.getLayers().length > 0) {
            mapInstance.fitBounds(markersGroup.getBounds(), { padding: [50, 50] });
         }
     }
@@ -431,9 +448,8 @@ document.addEventListener('DOMContentLoaded', () => {
                  <div class="bg-green-50 p-4 rounded-xl space-y-2">
                     <p><strong>${T('modalAddress')}:</strong> ${shop[`address_${currentLang}`] || shop['address_zh-TW'] || T('notProvided')}</p>
                     <p><strong>${T('modalPhone')}:</strong> ${shop.phone || T('notProvided')}</p>
-                    <p><strong>${T('modalWebsite')}:</strong> ${shop.website ? `<a href="${shop.website}" target="_blank" class="text-green-600 hover:underline">${shop.website}</a>` : T('notProvided')}</p>
+                    <p><strong>${T('modalWebsite')}:</strong> ${shop.website ? `<a href="//${shop.website.replace(/^https?:\/\//,'')}" target="_blank" class="text-green-600 hover:underline">${shop.website}</a>` : T('notProvided')}</p>
                  </div>
-                 ${localStorage.getItem('authToken') ? `<button id="recommend-btn" data-shop-id="${shopId}" class="mt-4 w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">${T('adminRecommendBtn')}</button>` : ''}
             </div>
         `;
         
@@ -441,8 +457,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.style.overflow = 'hidden';
 
         document.getElementById('close-modal').addEventListener('click', closeModal);
-        const recommendBtn = document.getElementById('recommend-btn');
-        if(recommendBtn) recommendBtn.addEventListener('click', handleRecommend);
     }
     
     function closeModal() {
@@ -494,58 +508,11 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const email = document.getElementById('newsletter-email').value.trim();
         if (!email) return;
-        // The backend needs a 'subscribe' action. Assuming it's added.
-        // If not present in the provided code.gs, one would need to add:
-        // 'subscribe': (p) => subscribeEmail(p.email),
-        // and function subscribeEmail(email) { getSheet('Subscribers').appendRow([new Date(), email]); return { message: 'Success' }; }
         const result = await apiFetch('subscribe', { email });
         if (result) {
             showMessage(translations[currentLang].newsletterSuccess);
             e.target.reset();
         }
-    }
-
-    async function handleFeedback(e) {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        const payload = Object.fromEntries(formData.entries());
-        const result = await apiFetch('submitFeedback', payload);
-        if (result) {
-            showMessage(translations[currentLang].reportSuccess);
-            e.target.reset();
-        }
-    }
-    
-    async function handleRecommend(e) {
-        const shopId = e.target.dataset.shopId;
-        const shop = allShops.find(s => s.id === shopId);
-        if(!shop) return;
-        
-        showMessage(translations[currentLang].recommendationSending);
-        
-        const payload = {
-            recipientEmail: 'all', // Backend should handle this special keyword
-            shopName: shop[`name_${currentLang}`] || shop['name_zh-TW'],
-            shopAddress: shop[`address_${currentLang}`] || shop['address_zh-TW'],
-            shopWebsite: shop.website
-        };
-
-        const result = await apiFetch('sendRecommendation', payload, true);
-        if (result) {
-            showMessage(result.message || translations[currentLang].recommendationSuccess);
-        }
-    }
-
-    function promptAdminLogin() {
-        const password = prompt(translations[currentLang].adminLoginPrompt);
-        if (!password) return;
-        apiFetch('login', { password }).then(data => {
-            if (data && data.token) {
-                localStorage.setItem('authToken', data.token);
-                ui.adminIndicator.classList.remove('hidden');
-                showMessage(translations[currentLang].adminLoginSuccess);
-            }
-        });
     }
 
     // ===== INITIALIZATION =====
@@ -558,18 +525,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const filterContainer = document.getElementById('filter-buttons-container');
             shopTypes.forEach(type => {
                 if(!type) return;
-                const en_type = allShops.find(s => s['type_zh-TW'] === type)['type_en'] || type;
                 const btn = document.createElement('button');
                 btn.className = 'tag px-3 py-1 rounded-full text-sm';
                 btn.dataset.category = type; 
-                // For simplicity, using zh-TW as the key. Multilingual mapping can be added.
                 btn.textContent = type;
                 filterContainer.appendChild(btn);
             });
             
             filterAndDisplayShops();
         }
-        if (data && data.announcements) {
+        if (data && data.announcements && String(data.announcements).trim()) {
             ui.announcementText.textContent = data.announcements;
             ui.announcementBar.classList.remove('hidden');
         }
@@ -577,10 +542,6 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeMap();
         setLanguage(currentLang);
         setupEventListeners();
-
-        if (localStorage.getItem('authToken')) {
-            ui.adminIndicator.classList.remove('hidden');
-        }
     }
 
     function initializeMap() {
@@ -607,10 +568,40 @@ document.addEventListener('DOMContentLoaded', () => {
             if (favBtn) toggleFavorite(favBtn.dataset.shopId);
         });
         document.getElementById('newsletter-form').addEventListener('submit', handleNewsletter);
-        document.getElementById('issue-form').addEventListener('submit', handleFeedback);
+        
+        document.getElementById('issue-form').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            const issueText = document.getElementById('issue').value.trim();
+            const submitButton = this.querySelector('button[type="submit"]');
+            if (!issueText) return;
+
+            submitButton.disabled = true;
+            submitButton.textContent = '...';
+
+            try {
+                const response = await fetch('https://formsubmit.co/ajax/artistworld0815@gmail.com', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ _subject: "永續商店地圖 - 問題回報", message: issueText })
+                });
+                const result = await response.json();
+                if (result.success === "true" || response.ok) {
+                    document.getElementById('issue-message').classList.remove('hidden');
+                    this.reset();
+                    setTimeout(() => { document.getElementById('issue-message').classList.add('hidden'); }, 5000);
+                } else { throw new Error('Formsubmit.co returned an error.'); }
+            } catch (error) {
+                console.error("Issue report error:", error);
+                showMessage(translations[currentLang].reportIssueErrorMsg);
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = translations[currentLang].reportIssueSubmitBtn;
+            }
+        });
+        
         document.getElementById('close-message-modal').addEventListener('click', () => ui.messageModal.classList.add('hidden'));
+        document.getElementById('close-error-modal').addEventListener('click', () => ui.errorModal.classList.add('hidden'));
         ui.shopDetailModal.addEventListener('click', (e) => e.target === ui.shopDetailModal && closeModal());
-        document.addEventListener('keydown', e => (e.ctrlKey && e.shiftKey && e.key === 'A') && promptAdminLogin());
     }
 
     initialize();
