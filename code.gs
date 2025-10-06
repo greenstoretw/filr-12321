@@ -264,9 +264,34 @@ const sendRecommendation = ({shopId}) => {
 };
 
 // =================================================================
+// LEADERBOARD
+// =================================================================
+const getLeaderboard = () => {
+    const rawShops = getShops(false).shops;
+    if (!rawShops || rawShops.length === 0) {
+        return { leaderboard: [] };
+    }
+
+    const leaderboard = rawShops.map(shop => {
+        const tagCount = (shop.tags || '').split(',').filter(Boolean).length;
+        return {
+            id: shop.id,
+            'name_zh-TW': shop['name_zh-TW'],
+            'name_en': shop['name_en'],
+            score: tagCount
+        };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+
+    return { leaderboard };
+};
+
+
+// =================================================================
 // MAIN HANDLERS
 // =================================================================
-const publicActions = { getPublicData, subscribe, submitFeedback, login };
+const publicActions = { getPublicData, subscribe, submitFeedback, login, getLeaderboard };
 const adminActions = { getDashboardStats, getSubscribers, deleteSubscriber, getAnnouncements, setAnnouncements, getPolicies, setPolicy, getShops, getShopById, saveShop, deleteShop, sendRecommendation, getTags, addTag, deleteTag };
 
 function doPost(e) {

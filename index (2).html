@@ -46,7 +46,6 @@
                         <a href="#" data-section="announcements" class="sidebar-item flex items-center px-4 py-2 rounded-md"><i class="fas fa-bullhorn w-6"></i>公告管理</a>
                         <a href="#" data-section="policies" class="sidebar-item flex items-center px-4 py-2 rounded-md"><i class="fas fa-file-alt w-6"></i>政策管理</a>
                         <a href="#" data-section="shops" class="sidebar-item flex items-center px-4 py-2 rounded-md"><i class="fas fa-store w-6"></i>店家管理</a>
-                        <a href="#" data-section="tags" class="sidebar-item flex items-center px-4 py-2 rounded-md"><i class="fas fa-tags w-6"></i>標籤管理</a>
                     </nav>
                     <div class="px-4 py-4"><button id="logoutButton" class="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"><i class="fas fa-sign-out-alt mr-2"></i>登出</button></div>
                 </div>
@@ -259,54 +258,6 @@ document.addEventListener('DOMContentLoaded', () => {
         shops: async () => {
             const data = await apiFetch('getShops');
             return `<div class="flex justify-between items-center mb-6"><h1 class="text-3xl font-bold">店家管理</h1><button id="add-shop" class="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700">新增店家</button></div><div class="bg-white p-6 rounded-lg shadow overflow-x-auto"><table class="min-w-full"><thead><tr><th class="py-2 px-4 text-left">店家名稱</th><th class="py-2 px-4 text-left">類型</th><th class="py-2 px-4 text-left">操作</th></tr></thead><tbody>${data.shops.map(s => `<tr><td class="py-2 px-4 border-b">${s['name_zh-TW']}</td><td class="py-2 px-4 border-b">${s['type_zh-TW']}</td><td class="py-2 px-4 border-b space-x-2"><button class="text-blue-500" data-action="edit-shop" data-id="${s.id}">編輯</button><button class="text-red-500" data-action="delete-shop" data-id="${s.id}">刪除</button><button class="text-purple-500" data-action="recommend-shop" data-id="${s.id}">推薦</button></td></tr>`).join('')}</tbody></table></div>`;
-        },
-        tags: async () => {
-            const data = await apiFetch('getTags');
-            const tagsHtml = data.tags.map(t => `
-                <tr>
-                    <td class="py-2 px-4 border-b">${t['name_zh-TW']}</td>
-                    <td class="py-2 px-4 border-b">${t['name_en']}</td>
-                    <td class="py-2 px-4 border-b">${t.id}</td>
-                    <td class="py-2 px-4 border-b">
-                        <button class="text-red-500 hover:text-red-700" data-action="delete-tag" data-id="${t.id}">刪除</button>
-                    </td>
-                </tr>`).join('');
-
-            return `
-                <h1 class="text-3xl font-bold mb-6">標籤管理</h1>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="md:col-span-2 bg-white p-6 rounded-lg shadow">
-                        <h2 class="text-xl font-bold mb-4">現有標籤</h2>
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full">
-                                <thead>
-                                    <tr>
-                                        <th class="py-2 px-4 text-left">中文名稱</th>
-                                        <th class="py-2 px-4 text-left">英文名稱</th>
-                                        <th class="py-2 px-4 text-left">ID</th>
-                                        <th class="py-2 px-4 text-left">操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody>${tagsHtml}</tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="bg-white p-6 rounded-lg shadow">
-                        <h2 class="text-xl font-bold mb-4">新增標籤</h2>
-                        <form id="addTagForm" class="space-y-4">
-                            <div>
-                                <label for="tagNameZh" class="block text-sm font-medium text-gray-700">中文名稱</label>
-                                <input type="text" id="tagNameZh" name="name_zh-TW" class="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md" required>
-                            </div>
-                            <div>
-                                <label for="tagNameEn" class="block text-sm font-medium text-gray-700">英文名稱</label>
-                                <input type="text" id="tagNameEn" name="name_en" class="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md" required>
-                            </div>
-                            <button type="submit" id="add-tag" class="w-full px-4 py-2 font-semibold text-white bg-emerald-600 rounded-md hover:bg-emerald-700">新增</button>
-                        </form>
-                    </div>
-                </div>
-            `;
         }
     };
 
@@ -342,24 +293,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     await apiFetch('deleteShop', { id });
                     showToast('店家已刪除');
                     navigateTo('shops');
-                }
-                if (target.id === 'add-tag') {
-                    e.preventDefault();
-                    const form = document.getElementById('addTagForm');
-                    const formData = new FormData(form);
-                    const tagData = Object.fromEntries(formData.entries());
-                    if (!tagData['name_zh-TW'] || !tagData['name_en']) {
-                        showErrorModal(new Error("中文和英文名稱為必填項目。"));
-                        return;
-                    }
-                    await apiFetch('addTag', { payload: tagData });
-                    showToast('標籤已新增！');
-                    navigateTo('tags');
-                }
-                if (action === 'delete-tag' && confirm('確定要刪除這個標籤嗎？')) {
-                    await apiFetch('deleteTag', { tagId: id });
-                    showToast('標籤已刪除！');
-                    navigateTo('tags');
                 }
                 if (action === 'delete-subscriber' && confirm(`確定要刪除此訂閱者嗎？`)) {
                     await apiFetch('deleteSubscriber', { email });
