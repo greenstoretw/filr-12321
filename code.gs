@@ -193,12 +193,16 @@ const getShops = (resolve = true) => {
     const sheet = openOrCreateSheet(SHOPS_SHEET_NAME);
     if (sheet.getLastRow() < 2) return { shops: [] };
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const shops = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues().map(row => {
+    const allShops = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues().map(row => {
         const shop = {};
         headers.forEach((header, i) => { shop[header] = row[i]; });
         return shop;
     });
-    return resolve ? { shops: resolveShopTags(shops) } : { shops };
+
+    // Only return shops that are not marked as 'banned'
+    const activeShops = allShops.filter(shop => shop.status !== 'banned');
+
+    return resolve ? { shops: resolveShopTags(activeShops) } : { shops: activeShops };
 };
 
 const _getRawShopById = (id) => {
@@ -225,9 +229,10 @@ const getShopById = ({id}) => {
 const saveShop = ({ shop }) => {
     const sheet = openOrCreateSheet(SHOPS_SHEET_NAME);
     if (sheet.getLastRow() === 0) {
-        sheet.appendRow(['id', 'name_zh-TW', 'name_en', 'type_zh-TW', 'type_en', 'address_zh-TW', 'address_en', 'phone', 'website', 'lat', 'lng', 'description_zh-TW', 'longDescription_zh-TW', 'tags']);
+        sheet.appendRow(['id', 'name_zh-TW', 'name_en', 'type_zh-TW', 'type_en', 'address_zh-TW', 'address_en', 'phone', 'website', 'lat', 'lng', 'description_zh-TW', 'longDescription_zh-TW', 'tags', 'status']);
     }
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
     if (Array.isArray(shop.tags)) {
         shop.tags = shop.tags.join(',');
     }
@@ -241,19 +246,65 @@ const saveShop = ({ shop }) => {
         }
     } else { // Create
         shop.id = Math.random().toString(36).substr(2, 9);
+        shop.status = 'active'; // Set default status for new shops
         const rowData = headers.map(header => shop[header] || '');
         sheet.appendRow(rowData);
     }
     return { message: '店家已儲存' };
 };
 
-const deleteShop = ({id}) => {
+const deleteShop = ({id}) => { // This now functions as a "soft delete" or "ban"
+    const sheet = openOrCreateSheet(SHOPS_SHEET_NAME);
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const statusColumnIndex = headers.indexOf('status') + 1;
+    if (statusColumnIndex === 0) throw new Error("表格中找不到 'status' 欄位。");
+
+    const ids = sheet.getRange(2, 1, sheet.getLastRow() > 1 ? sheet.getLastRow() - 1 : 1, 1).getValues().flat().map(String);
+    const rowIndex = ids.findIndex(i => i === String(id));
+
+    if (rowIndex > -1) {
+        sheet.getRange(rowIndex + 2, statusColumnIndex).setValue('banned');
+        return { message: '店家已移至垃圾桶' };
+    }
+    throw new Error('找不到店家');
+};
+
+const getBannedShops = () => {
+    const sheet = openOrCreateSheet(SHOPS_SHEET_NAME);
+    if (sheet.getLastRow() < 2) return { shops: [] };
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const allShops = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues().map(row => {
+        const shop = {};
+        headers.forEach((header, i) => { shop[header] = row[i]; });
+        return shop;
+    });
+    const bannedShops = allShops.filter(shop => shop.status === 'banned');
+    return { shops: bannedShops };
+};
+
+const restoreShop = ({id}) => {
+    const sheet = openOrCreateSheet(SHOPS_SHEET_NAME);
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const statusColumnIndex = headers.indexOf('status') + 1;
+    if (statusColumnIndex === 0) throw new Error("表格中找不到 'status' 欄位。");
+
+    const ids = sheet.getRange(2, 1, sheet.getLastRow() > 1 ? sheet.getLastRow() - 1 : 1, 1).getValues().flat().map(String);
+    const rowIndex = ids.findIndex(i => i === String(id));
+
+    if (rowIndex > -1) {
+        sheet.getRange(rowIndex + 2, statusColumnIndex).setValue('active');
+        return { message: '店家已還原' };
+    }
+    throw new Error('找不到店家');
+};
+
+const deleteShopPermanently = ({id}) => {
     const sheet = openOrCreateSheet(SHOPS_SHEET_NAME);
     const ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat().map(String);
     const rowIndex = ids.findIndex(i => i === String(id));
     if (rowIndex > -1) {
         sheet.deleteRow(rowIndex + 2);
-        return { message: '店家已刪除' };
+        return { message: '店家已永久刪除' };
     }
     throw new Error('找不到店家');
 };
@@ -292,7 +343,11 @@ const getLeaderboard = () => {
 // MAIN HANDLERS
 // =================================================================
 const publicActions = { getPublicData, subscribe, submitFeedback, login, getLeaderboard };
-const adminActions = { getDashboardStats, getSubscribers, deleteSubscriber, getAnnouncements, setAnnouncements, getPolicies, setPolicy, getShops, getShopById, saveShop, deleteShop, sendRecommendation, getTags, addTag, deleteTag };
+const adminActions = {
+    getDashboardStats, getSubscribers, deleteSubscriber, getAnnouncements, setAnnouncements,
+    getPolicies, setPolicy, getShops, getShopById, saveShop, deleteShop,
+    sendRecommendation, getTags, addTag, deleteTag, getBannedShops, restoreShop, deleteShopPermanently
+};
 
 function doPost(e) {
     try {

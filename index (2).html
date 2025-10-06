@@ -46,6 +46,7 @@
                         <a href="#" data-section="announcements" class="sidebar-item flex items-center px-4 py-2 rounded-md"><i class="fas fa-bullhorn w-6"></i>公告管理</a>
                         <a href="#" data-section="policies" class="sidebar-item flex items-center px-4 py-2 rounded-md"><i class="fas fa-file-alt w-6"></i>政策管理</a>
                         <a href="#" data-section="shops" class="sidebar-item flex items-center px-4 py-2 rounded-md"><i class="fas fa-store w-6"></i>店家管理</a>
+                        <a href="#" data-section="trash" class="sidebar-item flex items-center px-4 py-2 rounded-md"><i class="fas fa-trash-alt w-6"></i>垃圾桶</a>
                     </nav>
                     <div class="px-4 py-4"><button id="logoutButton" class="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"><i class="fas fa-sign-out-alt mr-2"></i>登出</button></div>
                 </div>
@@ -257,7 +258,11 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         shops: async () => {
             const data = await apiFetch('getShops');
-            return `<div class="flex justify-between items-center mb-6"><h1 class="text-3xl font-bold">店家管理</h1><button id="add-shop" class="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700">新增店家</button></div><div class="bg-white p-6 rounded-lg shadow overflow-x-auto"><table class="min-w-full"><thead><tr><th class="py-2 px-4 text-left">店家名稱</th><th class="py-2 px-4 text-left">類型</th><th class="py-2 px-4 text-left">操作</th></tr></thead><tbody>${data.shops.map(s => `<tr><td class="py-2 px-4 border-b">${s['name_zh-TW']}</td><td class="py-2 px-4 border-b">${s['type_zh-TW']}</td><td class="py-2 px-4 border-b space-x-2"><button class="text-blue-500" data-action="edit-shop" data-id="${s.id}">編輯</button><button class="text-red-500" data-action="delete-shop" data-id="${s.id}">刪除</button><button class="text-purple-500" data-action="recommend-shop" data-id="${s.id}">推薦</button></td></tr>`).join('')}</tbody></table></div>`;
+            return `<div class="flex justify-between items-center mb-6"><h1 class="text-3xl font-bold">店家管理</h1><button id="add-shop" class="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700">新增店家</button></div><div class="bg-white p-6 rounded-lg shadow overflow-x-auto"><table class="min-w-full"><thead><tr><th class="py-2 px-4 text-left">店家名稱</th><th class="py-2 px-4 text-left">類型</th><th class="py-2 px-4 text-left">操作</th></tr></thead><tbody>${data.shops.map(s => `<tr><td class="py-2 px-4 border-b">${s['name_zh-TW']}</td><td class="py-2 px-4 border-b">${s['type_zh-TW']}</td><td class="py-2 px-4 border-b space-x-2"><button class="text-blue-500" data-action="edit-shop" data-id="${s.id}">編輯</button><button class="text-gray-600" data-action="delete-shop" data-id="${s.id}">移至垃圾桶</button><button class="text-purple-500" data-action="recommend-shop" data-id="${s.id}">推薦</button></td></tr>`).join('')}</tbody></table></div>`;
+        },
+        trash: async () => {
+            const data = await apiFetch('getBannedShops');
+            return `<h1 class="text-3xl font-bold mb-6">垃圾桶</h1><div class="bg-white p-6 rounded-lg shadow overflow-x-auto"><table class="min-w-full"><thead><tr><th class="py-2 px-4 text-left">店家名稱</th><th class="py-2 px-4 text-left">類型</th><th class="py-2 px-4 text-left">操作</th></tr></thead><tbody>${data.shops.map(s => `<tr><td class="py-2 px-4 border-b">${s['name_zh-TW']}</td><td class="py-2 px-4 border-b">${s['type_zh-TW']}</td><td class="py-2 px-4 border-b space-x-2"><button class="text-green-500" data-action="restore-shop" data-id="${s.id}">還原</button><button class="text-red-500" data-action="delete-shop-permanently" data-id="${s.id}">永久刪除</button></td></tr>`).join('')}</tbody></table></div>`;
         }
     };
 
@@ -289,10 +294,20 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 if (target.id === 'add-shop') { openShopForm(); }
                 if (action === 'edit-shop') { openShopForm(id); }
-                if (action === 'delete-shop' && confirm(`確定要刪除此店家嗎？`)) {
+                if (action === 'delete-shop' && confirm(`確定要將此店家移至垃圾桶嗎？`)) {
                     await apiFetch('deleteShop', { id });
-                    showToast('店家已刪除');
+                    showToast('店家已移至垃圾桶');
                     navigateTo('shops');
+                }
+                if (action === 'restore-shop' && confirm(`確定要還原此店家嗎？`)) {
+                    await apiFetch('restoreShop', { id });
+                    showToast('店家已還原');
+                    navigateTo('trash');
+                }
+                if (action === 'delete-shop-permanently' && confirm(`注意：此操作將永久刪除店家，無法復原。確定嗎？`)) {
+                    await apiFetch('deleteShopPermanently', { id });
+                    showToast('店家已永久刪除');
+                    navigateTo('trash');
                 }
                 if (action === 'delete-subscriber' && confirm(`確定要刪除此訂閱者嗎？`)) {
                     await apiFetch('deleteSubscriber', { email });
