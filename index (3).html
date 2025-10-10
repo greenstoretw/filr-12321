@@ -246,7 +246,10 @@ document.addEventListener('DOMContentLoaded', () => {
             okButton: '確定', notProvided: '未提供', copyright: '© 2025 永續商店地圖 - 版權所有',
             modalAddress: '地址', modalOpeningHours: '營業時間', modalContactInfo: '聯絡方式', modalPhone: '電話', modalWebsite: '網站',
             apiError: '發生錯誤，請稍後再試。', newsletterSuccess: '感謝您的訂閱！',
-            errorModalTitle: '發生錯誤'
+            errorModalTitle: '發生錯誤',
+            reviewsTitle: '顧客評論', noReviews: '尚無評論。', leaveReviewTitle: '留下評論', nameLabel: '您的姓名', ratingLabel: '評分',
+            commentLabel: '評論', submitReviewBtn: '送出評論', reviewSuccessMsg: '評論已成功送出！',
+            namePlaceholder: '請輸入您的姓名', commentPlaceholder: '分享您的體驗...'
         },
         'en': {
             pageTitle: 'Sustainable Store Map - Home', appName: 'Sustainable Store Map', home: 'Home', map: 'Map', shopList: 'Shop List', newsletter: 'Newsletter', reportIssueNavLink: 'Report Issue',
@@ -262,7 +265,10 @@ document.addEventListener('DOMContentLoaded', () => {
             okButton: 'OK', notProvided: 'Not provided', copyright: '© 2025 Sustainable Store Map - All Rights Reserved',
             modalAddress: 'Address', modalOpeningHours: 'Opening Hours', modalContactInfo: 'Contact Info', modalPhone: 'Phone', modalWebsite: 'Website',
             apiError: 'An error occurred. Please try again later.', newsletterSuccess: 'Thank you for subscribing!',
-            errorModalTitle: 'An Error Occurred'
+            errorModalTitle: 'An Error Occurred',
+            reviewsTitle: 'Customer Reviews', noReviews: 'No reviews yet.', leaveReviewTitle: 'Leave a Review', nameLabel: 'Your Name', ratingLabel: 'Rating',
+            commentLabel: 'Comment', submitReviewBtn: 'Submit Review', reviewSuccessMsg: 'Review submitted successfully!',
+            namePlaceholder: 'Enter your name', commentPlaceholder: 'Share your experience...'
         }
     };
 
@@ -441,12 +447,29 @@ document.addEventListener('DOMContentLoaded', () => {
         updateMapMarkers(filteredShops);
     }
     
-    window.showShopDetail = (shopId) => {
+    window.showShopDetail = async (shopId) => {
         const shop = allShops.find(s => s.id === shopId);
         if (!shop) return;
-        
+
         ui.shopDetailModal.dataset.shopId = shopId;
         const T = (key) => translations[currentLang][key] || translations['zh-TW'][key];
+
+        // Fetch reviews
+        const reviewData = await apiFetch('getReviewsForShop', { shopId });
+        const reviews = reviewData ? reviewData.reviews : [];
+
+        const reviewsHtml = reviews.length > 0
+            ? reviews.map(review => `
+                <div class="border-t py-4">
+                    <div class="flex items-center mb-2">
+                        <strong class="mr-2">${review.authorName}</strong>
+                        <span class="text-yellow-500">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</span>
+                    </div>
+                    <p class="text-gray-600">${review.comment}</p>
+                    <p class="text-xs text-gray-400 mt-2">${new Date(review.timestamp).toLocaleString()}</p>
+                </div>
+            `).join('')
+            : `<p class="text-gray-500 py-4">${T('noReviews')}</p>`;
 
         ui.shopDetailContainer.innerHTML = `
             <div class="shop-detail-header py-12 text-white rounded-t-xl text-center relative">
@@ -461,6 +484,36 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p><strong>${T('modalPhone')}:</strong> ${shop.phone || T('notProvided')}</p>
                     <p><strong>${T('modalWebsite')}:</strong> ${shop.website ? `<a href="//${shop.website.replace(/^https?:\/\//,'')}" target="_blank" class="text-green-600 hover:underline">${shop.website}</a>` : T('notProvided')}</p>
                  </div>
+
+                 <div class="mt-6">
+                    <h3 class="text-2xl font-bold mb-4">${T('reviewsTitle')}</h3>
+                    <div id="reviews-list">${reviewsHtml}</div>
+                 </div>
+
+                 <div class="mt-6 border-t pt-6">
+                    <h3 class="text-2xl font-bold mb-4">${T('leaveReviewTitle')}</h3>
+                    <form id="review-form">
+                        <div class="mb-4">
+                            <label for="review-author" class="block font-medium mb-1">${T('nameLabel')}</label>
+                            <input type="text" id="review-author" required class="w-full p-2 border rounded" placeholder="${T('namePlaceholder')}">
+                        </div>
+                        <div class="mb-4">
+                            <label for="review-rating" class="block font-medium mb-1">${T('ratingLabel')}</label>
+                            <select id="review-rating" required class="w-full p-2 border rounded">
+                                <option value="5">★★★★★</option>
+                                <option value="4">★★★★☆</option>
+                                <option value="3">★★★☆☆</option>
+                                <option value="2">★★☆☆☆</option>
+                                <option value="1">★☆☆☆☆</option>
+                            </select>
+                        </div>
+                        <div class="mb-4">
+                            <label for="review-comment" class="block font-medium mb-1">${T('commentLabel')}</label>
+                            <textarea id="review-comment" required rows="4" class="w-full p-2 border rounded" placeholder="${T('commentPlaceholder')}"></textarea>
+                        </div>
+                        <button type="submit" class="btn-primary px-6 py-2 rounded-lg font-medium">${T('submitReviewBtn')}</button>
+                    </form>
+                 </div>
             </div>
         `;
         
@@ -468,6 +521,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.style.overflow = 'hidden';
 
         document.getElementById('close-modal').addEventListener('click', closeModal);
+        document.getElementById('review-form').addEventListener('submit', handleReviewSubmit);
     }
     
     function closeModal() {
@@ -520,6 +574,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ===== EVENT HANDLERS =====
+    async function handleReviewSubmit(e) {
+        e.preventDefault();
+        const shopId = ui.shopDetailModal.dataset.shopId;
+        const authorName = document.getElementById('review-author').value.trim();
+        const rating = document.getElementById('review-rating').value;
+        const comment = document.getElementById('review-comment').value.trim();
+
+        if (!shopId || !authorName || !rating || !comment) {
+            // Basic validation, though backend handles it too.
+            return;
+        }
+
+        const result = await apiFetch('submitReview', { shopId, authorName, rating, comment });
+        if (result) {
+            showMessage(translations[currentLang].reviewSuccessMsg);
+            // Refresh the modal to show the new comment
+            showShopDetail(shopId);
+        }
+    }
+
     function handleSearch() {
         currentSearchQuery = document.getElementById('search-input').value.trim();
         currentLoadedShops = 0;

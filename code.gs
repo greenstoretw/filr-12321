@@ -23,6 +23,7 @@ const SUBSCRIBERS_SHEET_NAME = 'Subscribers';
 const ANNOUNCEMENTS_SHEET_NAME = 'Announcements';
 const POLICIES_SHEET_NAME = 'Policies';
 const FEEDBACK_SHEET_NAME = 'Feedback';
+const REVIEWS_SHEET_NAME = 'Reviews';
 
 // =================================================================
 // UTILITY FUNCTIONS
@@ -340,9 +341,43 @@ const getLeaderboard = () => {
 
 
 // =================================================================
+// REVIEW MANAGEMENT
+// =================================================================
+const submitReview = ({ shopId, rating, comment, authorName }) => {
+    if (!shopId || !rating || !comment || !authorName) {
+        throw new Error("所有評論欄位皆為必填。");
+    }
+    if (isNaN(parseInt(rating, 10)) || rating < 1 || rating > 5) {
+        throw new Error("評分必須是 1 到 5 之間的數字。");
+    }
+    const sheet = openOrCreateSheet(REVIEWS_SHEET_NAME, ['shopId', 'rating', 'comment', 'authorName', 'timestamp']);
+    sheet.appendRow([shopId, rating, comment, authorName, new Date()]);
+    return { message: '評論已成功送出！' };
+};
+
+const getReviewsForShop = ({ shopId }) => {
+    if (!shopId) {
+        throw new Error("缺少店家 ID。");
+    }
+    const sheet = openOrCreateSheet(REVIEWS_SHEET_NAME, ['shopId', 'rating', 'comment', 'authorName', 'timestamp']);
+    if (sheet.getLastRow() < 2) {
+        return { reviews: [] };
+    }
+    const allReviews = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues().map(row => ({
+        shopId: row[0],
+        rating: row[1],
+        comment: row[2],
+        authorName: row[3],
+        timestamp: row[4]
+    }));
+    const shopReviews = allReviews.filter(review => String(review.shopId) === String(shopId));
+    return { reviews: shopReviews };
+};
+
+// =================================================================
 // MAIN HANDLERS
 // =================================================================
-const publicActions = { getPublicData, subscribe, submitFeedback, login, getLeaderboard };
+const publicActions = { getPublicData, subscribe, submitFeedback, login, getLeaderboard, submitReview, getReviewsForShop };
 const adminActions = {
     getDashboardStats, getSubscribers, deleteSubscriber, getAnnouncements, setAnnouncements,
     getPolicies, setPolicy, getShops, getShopById, saveShop, deleteShop,
