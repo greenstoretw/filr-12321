@@ -8,6 +8,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <style>
         body { font-family: 'Noto Sans TC', sans-serif; background-color: #f0f7f4; }
         .hero-section { background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?ixlib=rb-1.2.1&auto=format&fit=crop&w=1200&q=80'); background-size: cover; background-position: center; }
@@ -52,12 +55,16 @@
                 <a href="#shops" class="text-gray-700 hover:text-green-600 transition" data-i18n="shopList">商店列表</a>
                 <a href="#newsletter" class="text-gray-700 hover:text-green-600 transition" data-i18n="newsletter">訂閱電子報</a>
                 <a href="#report-issue" class="text-gray-700 hover:text-green-600 transition" data-i18n="reportIssueNavLink">問題回報</a>
+
+                <div id="auth-container" class="flex items-center space-x-2"></div>
+
                 <select id="language-select" class="bg-green-500 text-white text-sm px-3 py-1 rounded-full hover:bg-green-700 transition cursor-pointer">
                     <option value="zh-TW" data-i18n="langChinese">繁體中文</option>
                     <option value="en" data-i18n="langEnglish">English</option>
                 </select>
             </div>
              <div class="md:hidden flex items-center">
+                <div id="auth-container-mobile" class="flex items-center mr-2"></div>
                 <select id="language-select-mobile" class="bg-green-500 text-white text-sm px-3 py-1 rounded-full hover:bg-green-700 transition cursor-pointer mr-2">
                     <option value="zh-TW" data-i18n="langChinese">繁體中文</option>
                     <option value="en" data-i18n="langEnglish">English</option>
@@ -216,12 +223,30 @@
     </div>
 
 <script>
+    // IMPORTANT: Replace this with your own Firebase project configuration.
+    const firebaseConfig = {
+      apiKey: "AIzaSy...",
+      authDomain: "greenroof-8951b.firebaseapp.com",
+      projectId: "greenroof-8951b",
+      storageBucket: "greenroof-8951b.appspot.com",
+      messagingSenderId: "505320924738",
+      appId: "1:505320924738:web:19318b7462725f776269c3"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const googleProvider = new firebase.auth.GoogleAuthProvider();
+</script>
+
+<script>
 document.addEventListener('DOMContentLoaded', () => {
     // ===== CONFIGURATION =====
     const API_URL = 'https://script.google.com/macros/s/AKfycbzIcS0WXSQV0yNt5lyjvHy7hwDIUItkGeG78T_Yz2mKa83HJMgI9UxsfVIelU6PyKFwkw/exec';
 
     // ===== GLOBAL STATE =====
     let allShops = [];
+    let currentUser = null;
     let currentFilterCategory = 'all';
     let currentSearchQuery = '';
     const shopsPerPage = 6;
@@ -249,7 +274,8 @@ document.addEventListener('DOMContentLoaded', () => {
             errorModalTitle: '發生錯誤',
             reviewsTitle: '顧客評論', noReviews: '尚無評論。', leaveReviewTitle: '留下評論', nameLabel: '您的姓名', ratingLabel: '評分',
             commentLabel: '評論', submitReviewBtn: '送出評論', reviewSuccessMsg: '評論已成功送出！',
-            namePlaceholder: '請輸入您的姓名', commentPlaceholder: '分享您的體驗...'
+            namePlaceholder: '請輸入您的姓名', commentPlaceholder: '分享您的體驗...',
+            login: '登入', logout: '登出', pleaseLoginToReview: '請先登入以發表評論。'
         },
         'en': {
             pageTitle: 'Sustainable Store Map - Home', appName: 'Sustainable Store Map', home: 'Home', map: 'Map', shopList: 'Shop List', newsletter: 'Newsletter', reportIssueNavLink: 'Report Issue',
@@ -268,7 +294,8 @@ document.addEventListener('DOMContentLoaded', () => {
             errorModalTitle: 'An Error Occurred',
             reviewsTitle: 'Customer Reviews', noReviews: 'No reviews yet.', leaveReviewTitle: 'Leave a Review', nameLabel: 'Your Name', ratingLabel: 'Rating',
             commentLabel: 'Comment', submitReviewBtn: 'Submit Review', reviewSuccessMsg: 'Review submitted successfully!',
-            namePlaceholder: 'Enter your name', commentPlaceholder: 'Share your experience...'
+            namePlaceholder: 'Enter your name', commentPlaceholder: 'Share your experience...',
+            login: 'Login', logout: 'Logout', pleaseLoginToReview: 'Please log in to leave a review.'
         }
     };
 
@@ -284,7 +311,9 @@ document.addEventListener('DOMContentLoaded', () => {
         shopDetailModal: document.getElementById('shop-detail-modal'),
         shopDetailContainer: document.getElementById('shop-detail-container'),
         errorModal: document.getElementById('error-modal'),
-        errorDetails: document.getElementById('error-details')
+        errorDetails: document.getElementById('error-details'),
+        authContainer: document.getElementById('auth-container'),
+        authContainerMobile: document.getElementById('auth-container-mobile')
     };
 
     // ===== API & ERROR HANDLING =====
@@ -333,6 +362,45 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             ui.loadingOverlay.classList.add('hidden');
         }
+    }
+
+    // ===== AUTHENTICATION =====
+    function updateAuthUI(user) {
+        currentUser = user;
+        const T = (key) => translations[currentLang][key] || translations['zh-TW'][key];
+
+        const render = (container) => {
+            if (user) {
+                container.innerHTML = `
+                    <span class="text-gray-700 text-sm hidden sm:inline">${user.displayName}</span>
+                    <button id="logout-button" class="text-gray-700 hover:text-green-600 transition text-sm font-medium" data-i18n="logout">登出</button>
+                `;
+            } else {
+                container.innerHTML = `
+                    <button id="login-button" class="btn-primary px-4 py-1 rounded-md text-sm font-medium" data-i18n="login">登入</button>
+                `;
+            }
+        };
+
+        render(ui.authContainer);
+        render(ui.authContainerMobile);
+
+        // Re-add translations for dynamically created buttons
+        document.querySelector('#auth-container [data-i18n="logout"]')?.textContent = T('logout');
+        document.querySelector('#auth-container [data-i18n="login"]')?.textContent = T('login');
+        document.querySelector('#auth-container-mobile [data-i18n="logout"]')?.textContent = T('logout');
+        document.querySelector('#auth-container-mobile [data-i18n="login"]')?.textContent = T('login');
+    }
+
+    function signIn() {
+        auth.signInWithPopup(googleProvider).catch(error => {
+            console.error("Authentication failed:", error);
+            showErrorModal(error, "Google Sign-In");
+        });
+    }
+
+    function signOut() {
+        auth.signOut();
     }
 
     // ===== CORE FUNCTIONS =====
@@ -490,29 +558,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div id="reviews-list">${reviewsHtml}</div>
                  </div>
 
-                 <div class="mt-6 border-t pt-6">
-                    <h3 class="text-2xl font-bold mb-4">${T('leaveReviewTitle')}</h3>
-                    <form id="review-form">
-                        <div class="mb-4">
-                            <label for="review-author" class="block font-medium mb-1">${T('nameLabel')}</label>
-                            <input type="text" id="review-author" required class="w-full p-2 border rounded" placeholder="${T('namePlaceholder')}">
-                        </div>
-                        <div class="mb-4">
-                            <label for="review-rating" class="block font-medium mb-1">${T('ratingLabel')}</label>
-                            <select id="review-rating" required class="w-full p-2 border rounded">
-                                <option value="5">★★★★★</option>
-                                <option value="4">★★★★☆</option>
-                                <option value="3">★★★☆☆</option>
-                                <option value="2">★★☆☆☆</option>
-                                <option value="1">★☆☆☆☆</option>
-                            </select>
-                        </div>
-                        <div class="mb-4">
-                            <label for="review-comment" class="block font-medium mb-1">${T('commentLabel')}</label>
-                            <textarea id="review-comment" required rows="4" class="w-full p-2 border rounded" placeholder="${T('commentPlaceholder')}"></textarea>
-                        </div>
-                        <button type="submit" class="btn-primary px-6 py-2 rounded-lg font-medium">${T('submitReviewBtn')}</button>
-                    </form>
+                 <div id="review-form-container" class="mt-6 border-t pt-6">
+                    <!-- Review form will be rendered here based on auth state -->
                  </div>
             </div>
         `;
@@ -520,8 +567,40 @@ document.addEventListener('DOMContentLoaded', () => {
         ui.shopDetailModal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
 
+        // Render review form based on auth state
+        const reviewFormContainer = document.getElementById('review-form-container');
+        if (currentUser) {
+            reviewFormContainer.innerHTML = `
+                <h3 class="text-2xl font-bold mb-4">${T('leaveReviewTitle')}</h3>
+                <form id="review-form">
+                    <div class="mb-4">
+                        <p>${T('nameLabel')}: <strong>${currentUser.displayName}</strong></p>
+                    </div>
+                    <div class="mb-4">
+                        <label for="review-rating" class="block font-medium mb-1">${T('ratingLabel')}</label>
+                        <select id="review-rating" required class="w-full p-2 border rounded">
+                            <option value="5">★★★★★</option>
+                            <option value="4">★★★★☆</option>
+                            <option value="3">★★★☆☆</option>
+                            <option value="2">★★☆☆☆</option>
+                            <option value="1">★☆☆☆☆</option>
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label for="review-comment" class="block font-medium mb-1">${T('commentLabel')}</label>
+                        <textarea id="review-comment" required rows="4" class="w-full p-2 border rounded" placeholder="${T('commentPlaceholder')}"></textarea>
+                    </div>
+                    <button type="submit" class="btn-primary px-6 py-2 rounded-lg font-medium">${T('submitReviewBtn')}</button>
+                </form>
+            `;
+            document.getElementById('review-form').addEventListener('submit', handleReviewSubmit);
+        } else {
+            reviewFormContainer.innerHTML = `
+                <p class="text-center text-gray-600">${T('pleaseLoginToReview')}</p>
+            `;
+        }
+
         document.getElementById('close-modal').addEventListener('click', closeModal);
-        document.getElementById('review-form').addEventListener('submit', handleReviewSubmit);
     }
     
     function closeModal() {
@@ -576,17 +655,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===== EVENT HANDLERS =====
     async function handleReviewSubmit(e) {
         e.preventDefault();
+        if (!currentUser) return; // Safeguard, should not happen if UI is correct
+
         const shopId = ui.shopDetailModal.dataset.shopId;
-        const authorName = document.getElementById('review-author').value.trim();
         const rating = document.getElementById('review-rating').value;
         const comment = document.getElementById('review-comment').value.trim();
 
-        if (!shopId || !authorName || !rating || !comment) {
-            // Basic validation, though backend handles it too.
-            return;
-        }
+        const reviewPayload = {
+            shopId,
+            rating,
+            comment,
+            authorName: currentUser.displayName,
+            authorId: currentUser.uid
+        };
 
-        const result = await apiFetch('submitReview', { shopId, authorName, rating, comment });
+        const result = await apiFetch('submitReview', reviewPayload);
         if (result) {
             showMessage(translations[currentLang].reviewSuccessMsg);
             // Refresh the modal to show the new comment
@@ -641,6 +724,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ===== INITIALIZATION =====
     async function initialize() {
+        auth.onAuthStateChanged(updateAuthUI);
         renderLeaderboard();
         const data = await apiFetch('getPublicData');
         if (data && data.shops) {
@@ -727,6 +811,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('close-message-modal').addEventListener('click', () => ui.messageModal.classList.add('hidden'));
         document.getElementById('close-error-modal').addEventListener('click', () => ui.errorModal.classList.add('hidden'));
         ui.shopDetailModal.addEventListener('click', (e) => e.target === ui.shopDetailModal && closeModal());
+
+        const handleAuthClick = (e) => {
+            if (e.target.id === 'login-button') signIn();
+            if (e.target.id === 'logout-button') signOut();
+        };
+        ui.authContainer.addEventListener('click', handleAuthClick);
+        ui.authContainerMobile.addEventListener('click', handleAuthClick);
     }
 
     initialize();
