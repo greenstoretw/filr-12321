@@ -316,6 +316,41 @@ const sendRecommendation = ({shopId}) => {
 };
 
 // =================================================================
+// CSV IMPORT
+// =================================================================
+const importShopsFromCsv = ({ csvContent }) => {
+    if (!csvContent) {
+        throw new Error("CSV 內容不可為空。");
+    }
+
+    const data = Utilities.parseCsv(csvContent);
+    if (data.length < 2) {
+        throw new Error("CSV 必須包含標頭和至少一筆資料。");
+    }
+
+    const headers = data[0].map(h => h.trim());
+    const shopsData = data.slice(1);
+
+    let importCount = 0;
+    shopsData.forEach(row => {
+        const shop = {};
+        headers.forEach((header, i) => {
+            if (header) {
+                shop[header] = row[i];
+            }
+        });
+
+        // Basic validation to ensure we're not processing empty rows
+        if (Object.keys(shop).length > 0 && (shop['name_zh-TW'] || shop['name_en'])) {
+            saveShop({ shop }); // Reuse existing save function
+            importCount++;
+        }
+    });
+
+    return { message: `成功匯入 ${importCount} 間店家。` };
+};
+
+// =================================================================
 // LEADERBOARD
 // =================================================================
 const getLeaderboard = () => {
@@ -382,7 +417,8 @@ const publicActions = { getPublicData, subscribe, submitFeedback, login, getLead
 const adminActions = {
     getDashboardStats, getSubscribers, deleteSubscriber, getAnnouncements, setAnnouncements,
     getPolicies, setPolicy, getShops, getShopById, saveShop, deleteShop,
-    sendRecommendation, getTags, addTag, deleteTag, getBannedShops, restoreShop, deleteShopPermanently
+    sendRecommendation, getTags, addTag, deleteTag, getBannedShops, restoreShop, deleteShopPermanently,
+    importShopsFromCsv
 };
 
 function doPost(e) {
