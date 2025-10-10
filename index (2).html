@@ -6,6 +6,12 @@
     <title>綠色商店後台管理</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <!-- Papa Parse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <style>
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; }
@@ -24,13 +30,11 @@
         <div id="loginScreen" class="flex items-center justify-center min-h-screen bg-gray-200">
             <div class="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
                 <h2 class="text-2xl font-bold text-center text-gray-800">後台管理登入</h2>
-                <form id="loginForm">
-                    <div>
-                        <label for="password" class="text-sm font-medium text-gray-700">密碼</label>
-                        <input type="password" id="password" class="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-emerald-500" placeholder="請輸入密碼" required>
-                    </div>
-                    <button type="submit" id="loginButton" class="w-full px-4 py-2 font-semibold text-white bg-emerald-600 rounded-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2">登入</button>
-                </form>
+                <div class="pt-4">
+                    <button id="loginButton" class="w-full flex items-center justify-center px-4 py-2 font-semibold text-white bg-emerald-600 rounded-md hover:bg-emerald-700">
+                        <i class="fab fa-google mr-2"></i> 使用 Google 登入
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -83,9 +87,24 @@
     </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-    const API_URL = 'https://script.google.com/macros/s/AKfycbzIcS0WXSQV0yNt5lyjvHy7hwDIUItkGeG78T_Yz2mKa83HJMgI9UxsfVIelU6PyKFwkw/exec';
+    const firebaseConfig = {
+      apiKey: "AIzaSy...",
+      authDomain: "greenroof-8951b.firebaseapp.com",
+      projectId: "greenroof-8951b",
+      storageBucket: "greenroof-8951b.appspot.com",
+      messagingSenderId: "505320924738",
+      appId: "1:505320924738:web:19318b7462725f776269c3"
+    };
 
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    const googleProvider = new firebase.auth.GoogleAuthProvider();
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
     const ui = {
         loginScreen: document.getElementById('loginScreen'),
         dashboard: document.getElementById('dashboard'),
@@ -115,80 +134,63 @@ document.addEventListener('DOMContentLoaded', () => {
     const showErrorModal = (error) => {
         let details = `錯誤類型: ${error.name || '未知錯誤'}\n`;
         details += `錯誤訊息: ${error.message}\n\n`;
-        if (error.responseText) {
-            details += `後端原始回應 (可能是HTML錯誤頁):\n------------------------------------\n${error.responseText}\n------------------------------------\n\n`;
-        }
         if (error.stack) { details += `堆疊追蹤:\n${error.stack}`; }
         ui.errorDetails.textContent = details;
         ui.errorModal.classList.remove('hidden');
     };
 
-    async function apiFetch(action, params = {}) {
-        ui.loadingIndicator.classList.remove('hidden');
+    const login = async () => {
         try {
-            const token = localStorage.getItem('authToken');
-            if (action !== 'login' && !token) {
-                logout();
-                throw new Error("Auth token not found. Please log in again.");
-            }
-            
-            const response = await fetch(API_URL, {
-                method: 'POST',
-                body: JSON.stringify({ action, token, ...params }),
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                mode: 'cors'
-            });
+            const result = await auth.signInWithPopup(googleProvider);
+            const user = result.user;
+            if (!user) return;
 
-            const text = await response.text();
-            try {
-                const result = JSON.parse(text);
-                 if (result.status === 'error') {
-                    if (result.message && result.message.toLowerCase().includes('token')) logout();
-                    throw new Error(result.message || 'Unknown backend error');
-                }
-                return result.data;
-            } catch (e) {
-                const err = new Error("無法解碼字串。後端可能回傳了非預期的內容 (例如 HTML 錯誤頁面)。");
-                err.responseText = text;
-                err.stack = e.stack;
-                throw err;
-            }
-        } catch (error) {
-            showErrorModal(error);
-            throw error;
-        } finally {
-            ui.loadingIndicator.classList.add('hidden');
-        }
-    }
-
-    const login = async (password) => {
-        try {
-            const data = await apiFetch('login', { payload: { password } });
-            if (data && data.token) {
-                localStorage.setItem('authToken', data.token);
+            // Check if the user is an admin
+            const adminDoc = await db.collection('admins').doc(user.uid).get();
+            if (adminDoc.exists) {
+                // User is an admin, show the dashboard
                 ui.loginScreen.classList.add('hidden');
                 ui.dashboard.classList.remove('hidden');
                 navigateTo('mainDashboard');
+            } else {
+                // Not an admin, show error and sign out
+                showErrorModal(new Error("您沒有權限存取這個後台。"));
+                await auth.signOut();
             }
-        } catch (error) { document.getElementById('password').value = ''; }
+        } catch (error) {
+            showErrorModal(error);
+            await auth.signOut();
+        }
     };
 
-    const logout = () => {
-        localStorage.removeItem('authToken');
+    const logout = async () => {
+        await auth.signOut();
         ui.dashboard.classList.add('hidden');
         ui.loginScreen.classList.remove('hidden');
         ui.mainContent.innerHTML = '';
     };
 
     const checkLogin = () => {
-        if (localStorage.getItem('authToken')) {
-            ui.loginScreen.classList.add('hidden');
-            ui.dashboard.classList.remove('hidden');
-            navigateTo('mainDashboard');
-        } else {
-             ui.dashboard.classList.add('hidden');
-             ui.loginScreen.classList.remove('hidden');
-        }
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                // User is signed in, verify they are an admin
+                const adminDoc = await db.collection('admins').doc(user.uid).get();
+                if (adminDoc.exists) {
+                    ui.loginScreen.classList.add('hidden');
+                    ui.dashboard.classList.remove('hidden');
+                    navigateTo('mainDashboard');
+                } else {
+                    // Not an admin, force sign out and show login screen
+                    await auth.signOut();
+                    ui.dashboard.classList.add('hidden');
+                    ui.loginScreen.classList.remove('hidden');
+                }
+            } else {
+                // User is signed out
+                ui.dashboard.classList.add('hidden');
+                ui.loginScreen.classList.remove('hidden');
+            }
+        });
     };
 
     const openModal = (title, bodyHtml, saveHandler) => {
@@ -204,39 +206,74 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeModal = () => ui.formModal.classList.add('hidden');
     
     const openShopForm = async (shopId = null) => {
-        const shop = shopId ? (await apiFetch('getShopById', { id: shopId })).shop : {};
+        let shop = {};
+        if (shopId) {
+            const doc = await db.collection('shops').doc(shopId).get();
+            if (doc.exists) {
+                shop = { id: doc.id, ...doc.data() };
+            } else {
+                return showErrorModal(new Error("找不到指定的店家。"));
+            }
+        }
+
         const title = shopId ? '編輯店家' : '新增店家';
         const formHtml = `
             <form id="shopForm" class="space-y-4">
-                <input type="hidden" name="id" value="${shop.id || ''}">
+                <input type="hidden" id="shopId" value="${shop.id || ''}">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div><label class="block">名稱 (繁中)</label><input type="text" name="name_zh-TW" class="w-full border p-2 rounded" value="${shop['name_zh-TW'] || ''}" required></div>
-                    <div><label class="block">名稱 (English)</label><input type="text" name="name_en" class="w-full border p-2 rounded" value="${shop['name_en'] || ''}"></div>
-                    <div><label class="block">類型 (繁中)</label><input type="text" name="type_zh-TW" class="w-full border p-2 rounded" value="${shop['type_zh-TW'] || ''}"></div>
-                    <div><label class="block">類型 (English)</label><input type="text" name="type_en" class="w-full border p-2 rounded" value="${shop['type_en'] || ''}"></div>
-                    <div><label class="block">地址 (繁中)</label><input type="text" name="address_zh-TW" class="w-full border p-2 rounded" value="${shop['address_zh-TW'] || ''}"></div>
-                    <div><label class="block">地址 (English)</label><input type="text" name="address_en" class="w-full border p-2 rounded" value="${shop['address_en'] || ''}"></div>
-                    <div><label class="block">電話</label><input type="text" name="phone" class="w-full border p-2 rounded" value="${shop.phone || ''}"></div>
-                    <div><label class="block">網站</label><input type="text" name="website" class="w-full border p-2 rounded" value="${shop.website || ''}"></div>
-                    <div><label class="block">緯度 (Lat)</label><input type="text" name="lat" class="w-full border p-2 rounded" value="${shop.lat || ''}"></div>
-                    <div><label class="block">經度 (Lng)</label><input type="text" name="lng" class="w-full border p-2 rounded" value="${shop.lng || ''}"></div>
+                    <div><label class="block">名稱 (繁中)</label><input type="text" id="name_zh-TW" class="w-full border p-2 rounded" value="${shop['name_zh-TW'] || ''}" required></div>
+                    <div><label class="block">名稱 (English)</label><input type="text" id="name_en" class="w-full border p-2 rounded" value="${shop['name_en'] || ''}"></div>
+                    <div><label class="block">類型 (繁中)</label><input type="text" id="type_zh-TW" class="w-full border p-2 rounded" value="${shop['type_zh-TW'] || ''}"></div>
+                    <div><label class="block">類型 (English)</label><input type="text" id="type_en" class="w-full border p-2 rounded" value="${shop['type_en'] || ''}"></div>
+                    <div><label class="block">地址 (繁中)</label><input type="text" id="address_zh-TW" class="w-full border p-2 rounded" value="${shop['address_zh-TW'] || ''}"></div>
+                    <div><label class="block">地址 (English)</label><input type="text" id="address_en" class="w-full border p-2 rounded" value="${shop['address_en'] || ''}"></div>
+                    <div><label class="block">電話</label><input type="text" id="phone" class="w-full border p-2 rounded" value="${shop.phone || ''}"></div>
+                    <div><label class="block">網站</label><input type="text" id="website" class="w-full border p-2 rounded" value="${shop.website || ''}"></div>
+                    <div><label class="block">緯度 (Lat)</label><input type="text" id="lat" class="w-full border p-2 rounded" value="${shop.lat || ''}"></div>
+                    <div><label class="block">經度 (Lng)</label><input type="text" id="lng" class="w-full border p-2 rounded" value="${shop.lng || ''}"></div>
                 </div>
-                <div><label class="block">簡短描述 (繁中)</label><textarea name="description_zh-TW" class="w-full border p-2 rounded h-24">${shop['description_zh-TW'] || ''}</textarea></div>
-                <div><label class="block">長描述 (繁中)</label><textarea name="longDescription_zh-TW" class="w-full border p-2 rounded h-24">${shop['longDescription_zh-TW'] || ''}</textarea></div>
-                <div><label class="block">簡短描述 (English)</label><textarea name="description_en" class="w-full border p-2 rounded h-24">${shop['description_en'] || ''}</textarea></div>
-                <div><label class="block">長描述 (English)</label><textarea name="longDescription_en" class="w-full border p-2 rounded h-24">${shop['longDescription_en'] || ''}</textarea></div>
+                <div><label class="block">簡短描述 (繁中)</label><textarea id="description_zh-TW" class="w-full border p-2 rounded h-24">${shop['description_zh-TW'] || ''}</textarea></div>
+                <div><label class="block">長描述 (繁中)</label><textarea id="longDescription_zh-TW" class="w-full border p-2 rounded h-24">${shop['longDescription_zh-TW'] || ''}</textarea></div>
+                <div><label class="block">簡短描述 (English)</label><textarea id="description_en" class="w-full border p-2 rounded h-24">${shop['description_en'] || ''}</textarea></div>
+                <div><label class="block">長描述 (English)</label><textarea id="longDescription_en" class="w-full border p-2 rounded h-24">${shop['longDescription_en'] || ''}</textarea></div>
             </form>`;
         openModal(title, formHtml, saveShop);
     };
 
     const saveShop = async () => {
         const form = document.getElementById('shopForm');
-        const formData = new FormData(form);
-        const shopData = Object.fromEntries(formData.entries());
-        await apiFetch('saveShop', { shop: shopData });
-        closeModal();
-        showToast('店家已儲存！');
-        navigateTo('shops');
+        const shopId = form.querySelector('#shopId').value;
+
+        const shopData = {
+            'name_zh-TW': form.querySelector('#name_zh-TW').value,
+            'name_en': form.querySelector('#name_en').value,
+            'type_zh-TW': form.querySelector('#type_zh-TW').value,
+            'type_en': form.querySelector('#type_en').value,
+            'address_zh-TW': form.querySelector('#address_zh-TW').value,
+            'address_en': form.querySelector('#address_en').value,
+            'phone': form.querySelector('#phone').value,
+            'website': form.querySelector('#website').value,
+            'lat': form.querySelector('#lat').value,
+            'lng': form.querySelector('#lng').value,
+            'description_zh-TW': form.querySelector('#description_zh-TW').value,
+            'longDescription_zh-TW': form.querySelector('#longDescription_zh-TW').value,
+            'description_en': form.querySelector('#description_en').value,
+            'longDescription_en': form.querySelector('#longDescription_en').value,
+        };
+
+        try {
+            if (shopId) {
+                await db.collection('shops').doc(shopId).update(shopData);
+            } else {
+                shopData.status = 'active'; // Default status for new shops
+                await db.collection('shops').add(shopData);
+            }
+            closeModal();
+            showToast('店家已儲存！');
+            navigateTo('shops');
+        } catch (error) {
+            showErrorModal(error);
+        }
     };
 
     const openCsvImportModal = () => {
@@ -265,24 +302,63 @@ document.addEventListener('DOMContentLoaded', () => {
         const handleUpload = () => {
             const fileInput = document.getElementById('csvFile');
             if (fileInput.files.length === 0) {
-                showErrorModal(new Error("請選擇一個檔案。"));
-                return;
+                return showErrorModal(new Error("請選擇一個檔案。"));
             }
             const file = fileInput.files[0];
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                const csvContent = event.target.result;
-                try {
-                    // We will create the 'importShopsFromCsv' action in the backend later.
-                    await apiFetch('importShopsFromCsv', { csvContent });
-                    closeModal();
-                    showToast('CSV 檔案已上傳，正在背景處理中...');
-                    navigateTo('shops');
-                } catch (error) {
-                    // Error is handled by apiFetch
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: async (results) => {
+                    ui.loadingIndicator.classList.remove('hidden');
+                    try {
+                        const shops = results.data;
+                        if (shops.length === 0) {
+                            throw new Error("CSV 檔案中沒有有效的資料。");
+                        }
+
+                        const batch = db.batch();
+                        let importCount = 0;
+
+                        shops.forEach(shop => {
+                            // Basic validation
+                            if (shop.name_zh_TW || shop.name_en) {
+                                const shopId = shop.id ? shop.id.trim() : null;
+                                let docRef;
+
+                                if (shopId) {
+                                    docRef = db.collection('shops').doc(shopId);
+                                    // Don't overwrite status on update unless specified
+                                    const { id, ...updateData } = shop;
+                                    batch.update(docRef, updateData);
+                                } else {
+                                    docRef = db.collection('shops').doc();
+                                    shop.status = 'active'; // Set default status for new shops
+                                    batch.set(docRef, shop);
+                                }
+                                importCount++;
+                            }
+                        });
+
+                        if (importCount === 0) {
+                            throw new Error("CSV 中沒有可匯入的店家資料。請檢查欄位名稱是否正確。");
+                        }
+
+                        await batch.commit();
+                        closeModal();
+                        showToast(`成功匯入 ${importCount} 間店家。`);
+                        navigateTo('shops');
+
+                    } catch (error) {
+                        showErrorModal(error);
+                    } finally {
+                        ui.loadingIndicator.classList.add('hidden');
+                    }
+                },
+                error: (error) => {
+                    showErrorModal(new Error(`CSV 解析失敗: ${error.message}`));
                 }
-            };
-            reader.readAsText(file, 'UTF-8');
+            });
         };
 
         openModal(title, formHtml, handleUpload);
@@ -291,43 +367,64 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const pageRenderers = {
         mainDashboard: async () => {
-            const data = await apiFetch('getDashboardStats');
-            return `<h1 class="text-3xl font-bold mb-6">儀表板</h1><div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div class="p-6 bg-white rounded-lg shadow"><h2 class="text-lg font-medium text-gray-600">總訂閱數</h2><p class="text-4xl font-bold text-emerald-600 mt-2">${data.totalSubscribers}</p></div><div class="p-6 bg-white rounded-lg shadow"><h2 class="text-lg font-medium text-gray-600">總店家數</h2><p class="text-4xl font-bold text-blue-600 mt-2">${data.totalShops}</p></div></div>`;
+            ui.loadingIndicator.classList.remove('hidden');
+            try {
+                const shopsPromise = db.collection('shops').get();
+                const subscribersPromise = db.collection('subscribers').get();
+
+                const [shopsSnap, subscribersSnap] = await Promise.all([shopsPromise, subscribersPromise]);
+
+                const totalShops = shopsSnap.size;
+                const totalSubscribers = subscribersSnap.size;
+
+                return `<h1 class="text-3xl font-bold mb-6">儀表板</h1><div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div class="p-6 bg-white rounded-lg shadow"><h2 class="text-lg font-medium text-gray-600">總訂閱數</h2><p class="text-4xl font-bold text-emerald-600 mt-2">${totalSubscribers}</p></div><div class="p-6 bg-white rounded-lg shadow"><h2 class="text-lg font-medium text-gray-600">總店家數</h2><p class="text-4xl font-bold text-blue-600 mt-2">${totalShops}</p></div></div>`;
+            } finally {
+                ui.loadingIndicator.classList.add('hidden');
+            }
         },
         subscribers: async () => {
-            const data = await apiFetch('getSubscribers');
-            return `<h1 class="text-3xl font-bold mb-6">訂閱者管理</h1><div class="bg-white p-6 rounded-lg shadow overflow-x-auto"><table class="min-w-full"><thead><tr><th class="py-2 px-4 text-left">Email</th><th class="py-2 px-4 text-left">訂閱時間</th><th class="py-2 px-4 text-left">操作</th></tr></thead><tbody>${data.subscribers.map(s => `<tr><td class="py-2 px-4 border-b">${s.email}</td><td class="py-2 px-4 border-b">${new Date(s.timestamp).toLocaleString()}</td><td class="py-2 px-4 border-b"><button class="text-red-500 hover:text-red-700" data-action="delete-subscriber" data-email="${s.email}">刪除</button></td></tr>`).join('')}</tbody></table></div>`;
+            const subscribersSnap = await db.collection('subscribers').orderBy('timestamp', 'desc').get();
+            const subscribers = subscribersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            return `<h1 class="text-3xl font-bold mb-6">訂閱者管理</h1><div class="bg-white p-6 rounded-lg shadow overflow-x-auto"><table class="min-w-full"><thead><tr><th class="py-2 px-4 text-left">Email</th><th class="py-2 px-4 text-left">訂閱時間</th><th class="py-2 px-4 text-left">操作</th></tr></thead><tbody>${subscribers.map(s => `<tr><td class="py-2 px-4 border-b">${s.email}</td><td class="py-2 px-4 border-b">${s.timestamp?.toDate().toLocaleString() || 'N/A'}</td><td class="py-2 px-4 border-b"><button class="text-red-500 hover:text-red-700" data-action="delete-subscriber" data-id="${s.id}">刪除</button></td></tr>`).join('')}</tbody></table></div>`;
         },
         announcements: async () => {
-            const data = await apiFetch('getAnnouncements');
-            return `<h1 class="text-3xl font-bold mb-6">公告管理</h1><div class="bg-white p-6 rounded-lg shadow"><label for="announcementsEditor" class="block text-lg font-medium mb-2">公告內容</label><textarea id="announcementsEditor" class="w-full h-48 p-3 border rounded">${data.announcements}</textarea><button id="saveAnnouncements" class="mt-4 px-4 py-2 text-white bg-emerald-600 rounded">儲存</button></div>`;
+            const doc = await db.collection('site_settings').doc('announcements').get();
+            const content = doc.exists ? doc.data().content : '';
+            return `<h1 class="text-3xl font-bold mb-6">公告管理</h1><div class="bg-white p-6 rounded-lg shadow"><label for="announcementsEditor" class="block text-lg font-medium mb-2">公告內容</label><textarea id="announcementsEditor" class="w-full h-48 p-3 border rounded">${content}</textarea><button id="saveAnnouncements" class="mt-4 px-4 py-2 text-white bg-emerald-600 rounded">儲存</button></div>`;
         },
         policies: async () => {
-            const data = await apiFetch('getPolicies');
+            const doc = await db.collection('site_settings').doc('policies').get();
+            const data = doc.exists ? doc.data() : {};
             return `<h1 class="text-3xl font-bold mb-6">政策管理</h1><div class="bg-white p-6 rounded-lg shadow space-y-6"><div><label for="privacy" class="block text-lg font-medium mb-2">隱私權政策</label><textarea id="privacy" class="w-full h-48 p-3 border rounded">${data.privacy || ''}</textarea><button data-key="privacy" class="save-policy mt-2 px-4 py-2 text-white bg-emerald-600">儲存</button></div><div><label for="disclaimer" class="block text-lg font-medium mb-2">免責聲明</label><textarea id="disclaimer" class="w-full h-48 p-3 border rounded">${data.disclaimer || ''}</textarea><button data-key="disclaimer" class="save-policy mt-2 px-4 py-2 text-white bg-emerald-600">儲存</button></div></div>`;
         },
         shops: async () => {
-            const data = await apiFetch('getShops');
-            return `<div class="flex justify-between items-center mb-6"><h1 class="text-3xl font-bold">店家管理</h1><div class="flex space-x-2"><button id="import-csv" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">從 CSV 匯入</button><button id="add-shop" class="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700">新增店家</button></div></div><div class="bg-white p-6 rounded-lg shadow overflow-x-auto"><table class="min-w-full"><thead><tr><th class="py-2 px-4 text-left">店家名稱</th><th class="py-2 px-4 text-left">類型</th><th class="py-2 px-4 text-left">操作</th></tr></thead><tbody>${data.shops.map(s => `<tr><td class="py-2 px-4 border-b">${s['name_zh-TW']}</td><td class="py-2 px-4 border-b">${s['type_zh-TW']}</td><td class="py-2 px-4 border-b space-x-2"><button class="text-blue-500" data-action="edit-shop" data-id="${s.id}">編輯</button><button class="text-gray-600" data-action="delete-shop" data-id="${s.id}">移至垃圾桶</button><button class="text-purple-500" data-action="recommend-shop" data-id="${s.id}">推薦</button></td></tr>`).join('')}</tbody></table></div>`;
+            const shopsSnap = await db.collection('shops').where('status', '==', 'active').get();
+            const shops = shopsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            return `<div class="flex justify-between items-center mb-6"><h1 class="text-3xl font-bold">店家管理</h1><div class="flex space-x-2"><button id="import-csv" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">從 CSV 匯入</button><button id="add-shop" class="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700">新增店家</button></div></div><div class="bg-white p-6 rounded-lg shadow overflow-x-auto"><table class="min-w-full"><thead><tr><th class="py-2 px-4 text-left">店家名稱</th><th class="py-2 px-4 text-left">類型</th><th class="py-2 px-4 text-left">操作</th></tr></thead><tbody>${shops.map(s => `<tr><td class="py-2 px-4 border-b">${s['name_zh-TW']}</td><td class="py-2 px-4 border-b">${s['type_zh-TW']}</td><td class="py-2 px-4 border-b space-x-2"><button class="text-blue-500" data-action="edit-shop" data-id="${s.id}">編輯</button><button class="text-gray-600" data-action="delete-shop" data-id="${s.id}">移至垃圾桶</button></td></tr>`).join('')}</tbody></table></div>`;
         },
         trash: async () => {
-            const data = await apiFetch('getBannedShops');
-            return `<h1 class="text-3xl font-bold mb-6">垃圾桶</h1><div class="bg-white p-6 rounded-lg shadow overflow-x-auto"><table class="min-w-full"><thead><tr><th class="py-2 px-4 text-left">店家名稱</th><th class="py-2 px-4 text-left">類型</th><th class="py-2 px-4 text-left">操作</th></tr></thead><tbody>${data.shops.map(s => `<tr><td class="py-2 px-4 border-b">${s['name_zh-TW']}</td><td class="py-2 px-4 border-b">${s['type_zh-TW']}</td><td class="py-2 px-4 border-b space-x-2"><button class="text-green-500" data-action="restore-shop" data-id="${s.id}">還原</button><button class="text-red-500" data-action="delete-shop-permanently" data-id="${s.id}">永久刪除</button></td></tr>`).join('')}</tbody></table></div>`;
+            const shopsSnap = await db.collection('shops').where('status', '==', 'banned').get();
+            const shops = shopsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            return `<h1 class="text-3xl font-bold mb-6">垃圾桶</h1><div class="bg-white p-6 rounded-lg shadow overflow-x-auto"><table class="min-w-full"><thead><tr><th class="py-2 px-4 text-left">店家名稱</th><th class="py-2 px-4 text-left">類型</th><th class="py-2 px-4 text-left">操作</th></tr></thead><tbody>${shops.map(s => `<tr><td class="py-2 px-4 border-b">${s['name_zh-TW']}</td><td class="py-2 px-4 border-b">${s['type_zh-TW']}</td><td class="py-2 px-4 border-b space-x-2"><button class="text-green-500" data-action="restore-shop" data-id="${s.id}">還原</button><button class="text-red-500" data-action="delete-shop-permanently" data-id="${s.id}">永久刪除</button></td></tr>`).join('')}</tbody></table></div>`;
         }
     };
 
     const navigateTo = async (sectionId) => {
-        ui.sidebarItems.forEach(i => i.classList.remove('active'));
-        document.querySelector(`[data-section="${sectionId}"]`).classList.add('active');
+        ui.loadingIndicator.classList.remove('hidden');
         try {
+            ui.sidebarItems.forEach(i => i.classList.remove('active'));
+            document.querySelector(`[data-section="${sectionId}"]`).classList.add('active');
             ui.mainContent.innerHTML = await pageRenderers[sectionId]();
         } catch(e) {
+            showErrorModal(e);
             ui.mainContent.innerHTML = `<div class="text-red-500 p-4 bg-red-100 rounded">無法載入。請檢查錯誤彈窗以獲取詳細資訊。</div>`;
+        } finally {
+            ui.loadingIndicator.classList.add('hidden');
         }
     };
     
     const setupEventListeners = () => {
-        ui.loginForm.addEventListener('submit', (e) => { e.preventDefault(); login(document.getElementById('password').value); });
+        document.getElementById('loginButton').addEventListener('click', login);
         ui.logoutButton.addEventListener('click', logout);
         ui.closeErrorModal.addEventListener('click', () => ui.errorModal.classList.add('hidden'));
         ui.closeModalButton.addEventListener('click', closeModal);
@@ -339,48 +436,43 @@ document.addEventListener('DOMContentLoaded', () => {
             const target = e.target;
             const action = target.dataset.action;
             const id = target.dataset.id;
-            const email = target.dataset.email;
 
             try {
                 if (target.id === 'add-shop') { openShopForm(); }
                 if (target.id === 'import-csv') { openCsvImportModal(); }
                 if (action === 'edit-shop') { openShopForm(id); }
                 if (action === 'delete-shop' && confirm(`確定要將此店家移至垃圾桶嗎？`)) {
-                    await apiFetch('deleteShop', { id });
+                    await db.collection('shops').doc(id).update({ status: 'banned' });
                     showToast('店家已移至垃圾桶');
                     navigateTo('shops');
                 }
                 if (action === 'restore-shop' && confirm(`確定要還原此店家嗎？`)) {
-                    await apiFetch('restoreShop', { id });
+                    await db.collection('shops').doc(id).update({ status: 'active' });
                     showToast('店家已還原');
                     navigateTo('trash');
                 }
                 if (action === 'delete-shop-permanently' && confirm(`注意：此操作將永久刪除店家，無法復原。確定嗎？`)) {
-                    await apiFetch('deleteShopPermanently', { id });
+                    await db.collection('shops').doc(id).delete();
                     showToast('店家已永久刪除');
                     navigateTo('trash');
                 }
                 if (action === 'delete-subscriber' && confirm(`確定要刪除此訂閱者嗎？`)) {
-                    await apiFetch('deleteSubscriber', { email });
+                    await db.collection('subscribers').doc(id).delete();
                     showToast('訂閱者已刪除');
                     navigateTo('subscribers');
                 }
-                if (action === 'recommend-shop' && confirm(`確定要向所有訂閱者推薦此店家嗎？`)) {
-                    await apiFetch('sendRecommendation', { shopId: id });
-                    showToast('推薦信已開始發送');
-                }
                 if (target.id === 'saveAnnouncements') {
                     const content = document.getElementById('announcementsEditor').value;
-                    await apiFetch('setAnnouncements', { payload: { content } });
+                    await db.collection('site_settings').doc('announcements').set({ content });
                     showToast('公告已儲存');
                 }
                 if (target.classList.contains('save-policy')) {
                     const key = target.dataset.key;
                     const value = document.getElementById(key).value;
-                    await apiFetch('setPolicy', { payload: { key, value } });
+                    await db.collection('site_settings').doc('policies').set({ [key]: value }, { merge: true });
                     showToast('政策已儲存');
                 }
-            } catch(error) { /* Handled by apiFetch */ }
+            } catch(error) { showErrorModal(error); }
         });
     };
 
